@@ -1,0 +1,12 @@
+{
+    "name": "FLH Desk",
+    "hacs": "1.6.0",
+    "domains": [
+        "cover",
+        "number",
+        "sensor"
+    ],
+    "iot_class": "Local Push",
+    "homeassistant": "2022.9.0",
+    "render_readme": true
+}

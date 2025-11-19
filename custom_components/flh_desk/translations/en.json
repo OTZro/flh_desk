@@ -1,0 +1,50 @@
+{
+    "config": {
+        "step": {
+            "confirm": {
+                "description": "Do you want to add the FLH Desk ({name}) to Home Assistant?\n\nDevice Address: {address}"
+            },
+            "user": {
+                "data": {
+                    "address": "Device"
+                },
+                "description": "Select your FLH Desk from the list"
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to the desk",
+            "unknown": "Unexpected error"
+        },
+        "abort": {
+            "already_configured": "Device is already configured",
+            "no_devices_found": "No FLH Desks found. Make sure Bluetooth is enabled and the desk is powered on."
+        }
+    },
+    "entity": {
+        "cover": {
+            "flh_desk": {
+                "name": "Desk"
+            }
+        },
+        "number": {
+            "target_height": {
+                "name": "Target height"
+            },
+            "sensitivity": {
+                "name": "Sensitivity"
+            }
+        },
+        "sensor": {
+            "height": {
+                "name": "Height"
+            },
+            "connection": {
+                "name": "Connection",
+                "state": {
+                    "connected": "Connected",
+                    "disconnected": "Disconnected"
+                }
+            }
+        }
+    }
+}
