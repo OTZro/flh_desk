@@ -41,15 +41,42 @@ def calculate_checksum(data: bytes) -> int:
     return sum(data) & 0x7F
 
 
-def build_command(command_bytes: bytes) -> bytes:
-    """Build complete command with prefix and checksum.
+def build_command(
+    command_bytes: bytes, 
+    has_max_limit: bool = False, 
+    has_min_limit: bool = False
+) -> bytes:
+    """Build complete command with prefix, limit flags, and checksum.
     
-    Format: COMMON_PREFIX + command_bytes + checksum
+    Format: COMMON_PREFIX + modified_command_bytes + checksum
+    
+    The first byte of command_bytes is modified based on limit settings:
+    - Both limits: first_byte + 0x30 (48)
+    - Max only: first_byte + 0x10 (16)
+    - Min only: first_byte + 0x20 (32)
+    - No limits: first_byte (unchanged)
     """
-    # Calculate checksum of command bytes only
-    checksum = calculate_checksum(command_bytes)
-    # Build: DD 00 + command + checksum
-    return COMMON_PREFIX + command_bytes + bytes([checksum])
+    # Convert to mutable list
+    cmd_list = list(command_bytes)
+    
+    # Modify first byte based on limit flags (APK's setFirstByteWithMaxMinLimit)
+    if len(cmd_list) > 0:
+        if has_max_limit and has_min_limit:
+            cmd_list[0] = (cmd_list[0] + 0x30) & 0xFF
+        elif has_max_limit:
+            cmd_list[0] = (cmd_list[0] + 0x10) & 0xFF
+        elif has_min_limit:
+            cmd_list[0] = (cmd_list[0] + 0x20) & 0xFF
+        # else: no modification needed
+    
+    modified_bytes = bytes(cmd_list)
+    
+    # Calculate checksum of modified command
+    checksum = calculate_checksum(modified_bytes)
+    
+    # Build: DD 00 + modified_command + checksum
+    return COMMON_PREFIX + modified_bytes + bytes([checksum])
+
 
 
 
