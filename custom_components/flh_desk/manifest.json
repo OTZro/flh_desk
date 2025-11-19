@@ -2,20 +2,20 @@
     "domain": "flh_desk",
     "name": "FLH Desk",
     "codeowners": [
-        "@your-github-username"
+        "@OTZro"
     ],
     "config_flow": true,
     "dependencies": [
         "bluetooth"
     ],
-    "documentation": "https://github.com/your-username/ha-flh-desk",
+    "documentation": "https://github.com/OTZro/flh_desk",
     "integration_type": "device",
     "iot_class": "local_push",
     "requirements": [
         "bleak>=0.21.0",
         "bleak-retry-connector>=3.1.0"
     ],
-    "version": "1.0.0",
+    "version": "1.0.1",
     "bluetooth": [
         {
             "service_uuid": "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
