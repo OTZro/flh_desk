@@ -171,7 +171,15 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._is_connected = True
         _LOGGER.info("Connected to FLH Desk at %s", self.ble_device.address)
         
-        # Initialize desk - INIT command already has DD prefix, send it raw
+        # 1. Send STOP command to wake up / handshake (Mimic APK behavior)
+        _LOGGER.debug("🚀 Sending STOP command (Wake Up)...")
+        await self.async_stop()
+        
+        # 2. Wait for potential response (APK does this)
+        _LOGGER.debug("⏱️  Waiting 1.0s for Wake Up response...")
+        await asyncio.sleep(1.0)
+        
+        # 3. Initialize desk - INIT command already has DD prefix, send it raw
         _LOGGER.debug("🚀 Sending INIT command: %s", CMD_INIT.hex())
         await self._send_command(CMD_INIT)
         _LOGGER.debug("⏱️  Waiting 500ms for INIT response...")
