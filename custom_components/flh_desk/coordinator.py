@@ -162,13 +162,16 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, _characteristic: BleakGATTCharacteristic, data: bytearray
     ) -> None:
         """Handle incoming notifications from desk."""
-        if len(data) < 11 or data[0] != 0x9D:  # -99 in signed byte
+        # Data must be at least 11 bytes and start with 0x9D
+        if len(data) < 11 or data[0] != 0x9D:
+            _LOGGER.debug("Invalid data: %s", data.hex())
             return
         
         cmd_type = data[1]
         
         if cmd_type == 0x00:  # Init response
-            _LOGGER.debug("Initialization done")
+            _LOGGER.debug("Initialization response received")
+            # Min/max limits are in bytes 6-9
             self._min_height_mm = struct.unpack("<H", data[6:8])[0]
             self._max_height_mm = struct.unpack("<H", data[8:10])[0]
             _LOGGER.info(
@@ -178,12 +181,14 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             
         elif cmd_type == 0x01:  # Height update
-            # Height is in bytes 2-3 (little-endian, in 0.1mm units)
-            self._current_height_mm = struct.unpack("<H", data[2:4])[0]
-            _LOGGER.debug("Current height: %.1f cm", self.current_height_cm)
+            # Current height is in bytes 6-7 (little-endian, in 0.1mm units)
+            self._current_height_mm = struct.unpack("<H", data[6:8])[0]
+            _LOGGER.debug("Current height: %.1f cm (raw: %d mm)", 
+                         self.current_height_cm, self._current_height_mm)
             
-            # Check if moving (byte 4, bit 0)
-            self._is_moving = bool(data[4] & 0x01)
+            # Check if moving (need to analyze more data bytes)
+            # For now, assume moving if receiving updates
+            # self._is_moving = bool(data[4] & 0x01)
         
         # Trigger callbacks for real-time UI updates
         self._trigger_callbacks()
