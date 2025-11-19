@@ -32,6 +32,26 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Common prefix for all commands (from APK: commonByteArray = {-35, 0})
+COMMON_PREFIX = bytes([0xDD, 0x00])
+
+
+def calculate_checksum(data: bytes) -> int:
+    """Calculate checksum (sum of all bytes & 0x7F)."""
+    return sum(data) & 0x7F
+
+
+def build_command(command_bytes: bytes) -> bytes:
+    """Build complete command with prefix and checksum.
+    
+    Format: COMMON_PREFIX + command_bytes + checksum
+    """
+    # Calculate checksum of command bytes only
+    checksum = calculate_checksum(command_bytes)
+    # Build: DD 00 + command + checksum
+    return COMMON_PREFIX + command_bytes + bytes([checksum])
+
+
 
 class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to manage FLH Desk BLE connection and data."""
@@ -192,20 +212,26 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_move_up(self) -> None:
         """Move desk up."""
         _LOGGER.debug("Moving desk up")
-        # Add sensitivity byte if needed
-        command = bytes(list(CMD_UP) + [self._sensitivity])
-        await self._send_command(command)
+        # Build: UP command + sensitivity
+        command_bytes = bytes(list(CMD_UP) + [self._sensitivity])
+        full_command = build_command(command_bytes)
+        await self._send_command(full_command)
 
     async def async_move_down(self) -> None:
         """Move desk down."""
         _LOGGER.debug("Moving desk down")
-        command = bytes(list(CMD_DOWN) + [self._sensitivity])
-        await self._send_command(command)
+        # Build: DOWN command + sensitivity
+        command_bytes = bytes(list(CMD_DOWN) + [self._sensitivity])
+        full_command = build_command(command_bytes)
+        await self._send_command(full_command)
 
     async def async_stop(self) -> None:
         """Stop desk movement."""
         _LOGGER.debug("Stopping desk")
-        await self._send_command(CMD_STOP)
+        # Build: STOP command + sensitivity
+        command_bytes = bytes(list(CMD_STOP) + [self._sensitivity])
+        full_command = build_command(command_bytes)
+        await self._send_command(full_command)
 
     async def async_move_to_height(self, height_cm: float) -> None:
         """Move desk to specific height."""
@@ -221,16 +247,19 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         height_low = height_mm & 0xFF
         height_high = (height_mm >> 8) & 0xFF
         
-        command = bytes(
+        command_bytes = bytes(
             list(CMD_AUTO_MOVE_BASE) + [height_low, height_high, self._sensitivity]
         )
+        full_command = build_command(command_bytes)
         
-        await self._send_command(command)
+        await self._send_command(full_command)
 
     async def async_stop_auto_move(self) -> None:
         """Stop automatic movement."""
         _LOGGER.debug("Stopping auto-move")
-        await self._send_command(CMD_AUTO_STOP)
+        # Build: AUTO_STOP command
+        full_command = build_command(CMD_AUTO_STOP)
+        await self._send_command(full_command)
 
     def set_sensitivity(self, sensitivity: int) -> None:
         """Set movement sensitivity (0-8)."""
