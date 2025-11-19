@@ -95,14 +95,20 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.client: BleakClient | None = None
         self._disconnect_lock = asyncio.Lock()
         self._is_connected = False
-        
+
+        # Reconnection settings
+        self._reconnect_task: asyncio.Task | None = None
+        self._should_reconnect = True
+        self._max_reconnect_attempts = 10
+        self._reconnect_delay = 5  # seconds
+
         # Desk state
         self._current_height_mm: int = 0
         self._min_height_mm: int = DEFAULT_MIN_HEIGHT * 10
         self._max_height_mm: int = DEFAULT_MAX_HEIGHT * 10
         self._is_moving: bool = False
         self._sensitivity: int = DEFAULT_SENSITIVITY
-        
+
         # Callbacks for real-time updates
         self._update_callbacks: list[Callable[[], None]] = []
 
@@ -197,6 +203,75 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.warning("Disconnected from FLH Desk")
         self._is_connected = False
         self._trigger_callbacks()
+
+        # Start reconnection task if enabled
+        if self._should_reconnect and self._reconnect_task is None:
+            self._reconnect_task = self.hass.async_create_task(
+                self._async_reconnect()
+            )
+
+    async def _async_reconnect(self) -> None:
+        """Attempt to reconnect to the desk."""
+        attempt = 0
+
+        while self._should_reconnect and attempt < self._max_reconnect_attempts:
+            attempt += 1
+            _LOGGER.info(
+                "🔄 Reconnection attempt %d/%d in %d seconds...",
+                attempt,
+                self._max_reconnect_attempts,
+                self._reconnect_delay,
+            )
+
+            await asyncio.sleep(self._reconnect_delay)
+
+            if not self._should_reconnect:
+                break
+
+            try:
+                # Update BLE device reference (it may have changed)
+                from homeassistant.components import bluetooth
+                ble_device = bluetooth.async_ble_device_from_address(
+                    self.hass, self.ble_device.address, connectable=True
+                )
+                if ble_device:
+                    self.ble_device = ble_device
+
+                await self.async_connect()
+                _LOGGER.info("✅ Reconnected to FLH Desk successfully")
+                self._reconnect_task = None
+                return
+
+            except Exception as err:
+                _LOGGER.warning(
+                    "❌ Reconnection attempt %d failed: %s",
+                    attempt,
+                    err,
+                )
+
+        if self._should_reconnect:
+            _LOGGER.error(
+                "🚫 Failed to reconnect after %d attempts",
+                self._max_reconnect_attempts,
+            )
+
+        self._reconnect_task = None
+
+    async def async_shutdown(self) -> None:
+        """Shutdown the coordinator and stop reconnection."""
+        _LOGGER.debug("Shutting down coordinator")
+        self._should_reconnect = False
+
+        # Cancel reconnection task if running
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            try:
+                await self._reconnect_task
+            except asyncio.CancelledError:
+                pass
+            self._reconnect_task = None
+
+        await self.async_disconnect()
 
     def _notification_handler(
         self, _characteristic: BleakGATTCharacteristic, data: bytearray
