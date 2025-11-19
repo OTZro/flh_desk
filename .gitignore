@@ -127,3 +127,9 @@ bluetooth_document.txt
 
 # Artifacts directory
 .gemini/
+
+# Test files
+log
+scan_desk.py
+test_*.py
+requirements.txt
