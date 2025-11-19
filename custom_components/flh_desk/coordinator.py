@@ -149,7 +149,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_connect(self) -> None:
         """Connect to the desk."""
-        _LOGGER.debug("Connecting to %s", self.ble_device.address)
+        _LOGGER.debug("🔌 Connecting to %s", self.ble_device.address)
         
         self.client = await establish_connection(
             BleakClient,
@@ -158,18 +158,23 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             disconnected_callback=self._on_disconnect,
         )
         
+        _LOGGER.debug("✅ BLE connection established")
+        
         # Subscribe to notifications
+        _LOGGER.debug("📡 Subscribing to notifications on %s", CHAR_TX_UUID)
         await self.client.start_notify(
             CHAR_TX_UUID,
             self._notification_handler,
         )
+        _LOGGER.debug("✅ Notification subscription successful")
         
         self._is_connected = True
         _LOGGER.info("Connected to FLH Desk at %s", self.ble_device.address)
         
         # Initialize desk - INIT command already has DD prefix, send it raw
-        _LOGGER.debug("Sending init command: %s", CMD_INIT.hex())
+        _LOGGER.debug("🚀 Sending INIT command: %s", CMD_INIT.hex())
         await self._send_command(CMD_INIT)
+        _LOGGER.debug("⏱️  Waiting 500ms for INIT response...")
         await asyncio.sleep(0.5)  # Wait for init response
 
     async def async_disconnect(self) -> None:
@@ -190,20 +195,36 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, _characteristic: BleakGATTCharacteristic, data: bytearray
     ) -> None:
         """Handle incoming notifications from desk."""
+        # Log RAW data first - before any filtering
+        _LOGGER.debug("📩 RAW notification received: %s (length=%d bytes)", 
+                     data.hex() if data else "<empty>", len(data))
+        
+        if not data or len(data) == 0:
+            _LOGGER.warning("⚠️  Received EMPTY notification")
+            return
+        
+        # Log each byte for detailed analysis
+        _LOGGER.debug("📊 Bytes breakdown: %s", [f"{b:02X}({b})" for b in data])
+        
         # Data must be at least 11 bytes and start with 0x9D
         if len(data) < 11 or data[0] != 0x9D:
-            _LOGGER.debug("Invalid data: %s", data.hex())
+            _LOGGER.warning(
+                "⚠️  Invalid format - len=%d, first_byte=0x%02X (expected: len>=11, first=0x9D)",
+                len(data), 
+                data[0] if len(data) > 0 else 0
+            )
             return
         
         cmd_type = data[1]
+        _LOGGER.debug("📋 Command type: 0x%02X", cmd_type)
         
         if cmd_type == 0x00:  # Init response
-            _LOGGER.debug("Initialization response received")
+            _LOGGER.info("✅ Initialization response received")
             # Min/max limits are in bytes 6-9
             self._min_height_mm = struct.unpack("<H", data[6:8])[0]
             self._max_height_mm = struct.unpack("<H", data[8:10])[0]
             _LOGGER.info(
-                "Height limits: %.1f - %.1f cm",
+                "📏 Height limits: %.1f - %.1f cm",
                 self.min_height_cm,
                 self.max_height_cm,
             )
@@ -211,7 +232,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elif cmd_type == 0x01:  # Height update
             # Current height is in bytes 6-7 (little-endian, in 0.1mm units)
             self._current_height_mm = struct.unpack("<H", data[6:8])[0]
-            _LOGGER.debug("Current height: %.1f cm (raw: %d mm)", 
+            _LOGGER.debug("📏 Current height: %.1f cm (raw: %d mm)", 
                          self.current_height_cm, self._current_height_mm)
             
             # Check if moving (need to analyze more data bytes)
@@ -235,11 +256,14 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self.client or not self.client.is_connected:
             raise UpdateFailed("Not connected to desk")
         
+        _LOGGER.debug("📤 Sending command: %s (%d bytes)", command.hex(), len(command))
+        _LOGGER.debug("📊 Command bytes: %s", [f"{b:02X}({b})" for b in command])
+        
         try:
             await self.client.write_gatt_char(CHAR_RX_UUID, command, response=False)
-            _LOGGER.debug("Sent command: %s", command.hex())
+            _LOGGER.debug("✅ Command sent successfully")
         except Exception as err:
-            _LOGGER.error("Failed to send command: %s", err)
+            _LOGGER.error("❌ Failed to send command: %s", err, exc_info=True)
             raise UpdateFailed(f"Failed to send command: {err}") from err
 
     async def async_move_up(self) -> None:
