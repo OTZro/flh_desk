@@ -140,7 +140,8 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._is_connected = True
         _LOGGER.info("Connected to FLH Desk at %s", self.ble_device.address)
         
-        # Initialize desk
+        # Initialize desk - INIT command already has DD prefix, send it raw
+        _LOGGER.debug("Sending init command: %s", CMD_INIT.hex())
         await self._send_command(CMD_INIT)
         await asyncio.sleep(0.5)  # Wait for init response
 
