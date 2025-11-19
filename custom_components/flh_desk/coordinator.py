@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Callable
 
 from bleak import BleakClient, BleakGATTCharacteristic
@@ -34,9 +35,9 @@ _LOGGER = logging.getLogger(__name__)
 # Common prefix for all commands (from APK: commonByteArray = {-35, 0})
 COMMON_PREFIX = bytes([0xDD, 0x00])
 
-# Heartbeat packet to keep desk awake (from APK: DUMMY_BYTE_ARRAY)
-HEARTBEAT_PACKET = bytes([0xDD, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-HEARTBEAT_INTERVAL = 10  # seconds
+# Idle timeout - reconnect if no command sent within this time
+IDLE_TIMEOUT = 300  # 5 minutes in seconds
+
 
 
 def calculate_checksum(data: bytes) -> int:
@@ -106,9 +107,8 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._max_reconnect_attempts = 10
         self._reconnect_delay = 5  # seconds
 
-        # Heartbeat settings
-        self._heartbeat_task: asyncio.Task | None = None
-        self._is_sleeping = True  # Assume desk is sleeping initially
+        # Idle timeout tracking
+        self._last_command_time: float = 0.0
 
         # Desk state
         self._current_height_mm: int = 0
@@ -198,56 +198,30 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("⏱️  Waiting 500ms for INIT response...")
         await asyncio.sleep(0.5)  # Wait for init response
 
-        # 4. Start heartbeat to keep desk awake
-        self._start_heartbeat()
-
     async def async_disconnect(self) -> None:
         """Disconnect from the desk."""
-        self._stop_heartbeat()
         async with self._disconnect_lock:
             if self.client and self.client.is_connected:
                 _LOGGER.debug("Disconnecting from %s", self.ble_device.address)
                 await self.client.disconnect()
             self._is_connected = False
 
-    def _start_heartbeat(self) -> None:
-        """Start the heartbeat task."""
-        if self._heartbeat_task is None:
-            self._heartbeat_task = self.hass.async_create_task(
-                self._async_heartbeat()
+    async def _async_ensure_connected(self) -> None:
+        """Ensure connection is fresh, reconnect if idle too long."""
+        current_time = time.time()
+        idle_time = current_time - self._last_command_time
+
+        # If idle for more than IDLE_TIMEOUT, force reconnect to wake up desk
+        if self._last_command_time > 0 and idle_time > IDLE_TIMEOUT:
+            _LOGGER.info(
+                "⏰ Idle for %.0f seconds, reconnecting to wake up desk...",
+                idle_time
             )
-            _LOGGER.debug("💓 Heartbeat started")
-
-    def _stop_heartbeat(self) -> None:
-        """Stop the heartbeat task."""
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            self._heartbeat_task = None
-            _LOGGER.debug("💔 Heartbeat stopped")
-
-    async def _async_heartbeat(self) -> None:
-        """Send periodic heartbeat to keep desk awake."""
-        while self._is_connected:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            if not self._is_connected:
-                break
-            try:
-                _LOGGER.debug("💓 Sending heartbeat")
-                await self._send_command(HEARTBEAT_PACKET)
-                self._is_sleeping = False
-            except Exception as err:
-                _LOGGER.warning("❌ Heartbeat failed: %s", err)
-
-    async def _async_wake_up(self) -> None:
-        """Wake up the desk if it's sleeping."""
-        if self._is_sleeping:
-            _LOGGER.debug("⏰ Waking up desk...")
-            # Send STOP command to wake up
-            command_bytes = bytes(list(CMD_STOP) + [self._sensitivity])
-            full_command = build_command(command_bytes)
-            await self._send_command(full_command)
-            await asyncio.sleep(0.1)  # Brief wait for wake up
-            self._is_sleeping = False
+            # Disconnect and reconnect
+            await self.async_disconnect()
+            await asyncio.sleep(0.5)
+            await self.async_connect()
+            _LOGGER.info("✅ Reconnected after idle timeout")
 
     def _on_disconnect(self, _client: BleakClient) -> None:
         """Handle disconnection."""
@@ -351,9 +325,6 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         cmd_type = data[1]
         _LOGGER.debug("📋 Command type: 0x%02X", cmd_type)
 
-        # Desk is awake if we receive notifications
-        self._is_sleeping = False
-
         if cmd_type == 0x00:  # Init response
             _LOGGER.info("✅ Initialization response received")
             # Min/max limits are in bytes 6-9 (12-bit big-endian format)
@@ -405,6 +376,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         
         try:
             await self.client.write_gatt_char(CHAR_RX_UUID, command, response=False)
+            self._last_command_time = time.time()
             _LOGGER.debug("✅ Command sent successfully")
         except Exception as err:
             _LOGGER.error("❌ Failed to send command: %s", err, exc_info=True)
@@ -413,7 +385,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_move_up(self) -> None:
         """Move desk up."""
         _LOGGER.debug("Moving desk up")
-        await self._async_wake_up()
+        await self._async_ensure_connected()
         # Build: UP command + sensitivity
         command_bytes = bytes(list(CMD_UP) + [self._sensitivity])
         full_command = build_command(command_bytes)
@@ -422,7 +394,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_move_down(self) -> None:
         """Move desk down."""
         _LOGGER.debug("Moving desk down")
-        await self._async_wake_up()
+        await self._async_ensure_connected()
         # Build: DOWN command + sensitivity
         command_bytes = bytes(list(CMD_DOWN) + [self._sensitivity])
         full_command = build_command(command_bytes)
@@ -438,7 +410,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_move_to_height(self, height_cm: float) -> None:
         """Move desk to specific height."""
-        await self._async_wake_up()
+        await self._async_ensure_connected()
         height_mm = int(height_cm * 10)
 
         # Clamp to limits
@@ -461,7 +433,7 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_stop_auto_move(self) -> None:
         """Stop automatic movement."""
         _LOGGER.debug("Stopping auto-move")
-        await self._async_wake_up()
+        await self._async_ensure_connected()
         # Build: AUTO_STOP command
         full_command = build_command(CMD_AUTO_STOP)
         await self._send_command(full_command)
