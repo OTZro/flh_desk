@@ -48,9 +48,11 @@ class FLHDeskCover(CoordinatorEntity[FLHDeskCoordinator], CoverEntity):
         super().__init__(coordinator)
         
         self._attr_unique_id = f"{entry.unique_id}_cover"
+        # Use last 5 chars of MAC address to distinguish multiple desks
+        short_addr = coordinator.ble_device.address.replace(":", "")[-4:].upper()
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.unique_id)},
-            name="FLH Desk",
+            name=f"FLH Desk {short_addr}",
             manufacturer=MANUFACTURER,
             model=MODEL,
             connections={(
