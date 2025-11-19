@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 from typing import Any, Callable
 
 from bleak import BleakClient, BleakGATTCharacteristic
@@ -228,20 +227,28 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         
         if cmd_type == 0x00:  # Init response
             _LOGGER.info("✅ Initialization response received")
-            # Min/max limits are in bytes 6-9
-            self._min_height_mm = struct.unpack("<H", data[6:8])[0]
-            self._max_height_mm = struct.unpack("<H", data[8:10])[0]
+            # Min/max limits are in bytes 6-9 (12-bit big-endian format)
+            # Formula: (B2 & 0xFF) | ((B1 & 0x0F) << 8)
+            min_b1, min_b2 = data[6], data[7]
+            max_b1, max_b2 = data[8], data[9]
+            self._min_height_mm = (min_b2 & 0xFF) | ((min_b1 & 0x0F) << 8)
+            self._max_height_mm = (max_b2 & 0xFF) | ((max_b1 & 0x0F) << 8)
             _LOGGER.info(
-                "📏 Height limits: %.1f - %.1f cm",
+                "📏 Height limits: %.1f - %.1f cm (min bytes: %02X %02X, max bytes: %02X %02X)",
                 self.min_height_cm,
                 self.max_height_cm,
+                min_b1, min_b2, max_b1, max_b2,
             )
             
         elif cmd_type == 0x01:  # Height update
-            # Current height is in bytes 6-7 (little-endian, in 0.1mm units)
-            self._current_height_mm = struct.unpack("<H", data[6:8])[0]
-            _LOGGER.debug("📏 Current height: %.1f cm (raw: %d mm)", 
-                         self.current_height_cm, self._current_height_mm)
+            # Current height is in bytes 6-7 (12-bit big-endian format from APK)
+            # B1's low 4 bits are high byte, B2 is low byte
+            # Formula: (B2 & 0xFF) | ((B1 & 0x0F) << 8)
+            b1 = data[6]
+            b2 = data[7]
+            self._current_height_mm = (b2 & 0xFF) | ((b1 & 0x0F) << 8)
+            _LOGGER.debug("📏 Current height: %.1f cm (raw: %d mm, bytes: %02X %02X)",
+                         self.current_height_cm, self._current_height_mm, b1, b2)
             
             # Check if moving (need to analyze more data bytes)
             # For now, assume moving if receiving updates
@@ -301,22 +308,22 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_move_to_height(self, height_cm: float) -> None:
         """Move desk to specific height."""
         height_mm = int(height_cm * 10)
-        
+
         # Clamp to limits
         height_mm = max(self._min_height_mm, min(height_mm, self._max_height_mm))
-        
+
         _LOGGER.debug("Moving to %.1f cm (%d mm)", height_mm / 10, height_mm)
-        
+
         # Build auto-move command
-        # Format: [64, 40] + height_low + height_high + sensitivity
-        height_low = height_mm & 0xFF
+        # Format: [64, 40] + height_high + height_low + sensitivity (big-endian from APK)
         height_high = (height_mm >> 8) & 0xFF
-        
+        height_low = height_mm & 0xFF
+
         command_bytes = bytes(
-            list(CMD_AUTO_MOVE_BASE) + [height_low, height_high, self._sensitivity]
+            list(CMD_AUTO_MOVE_BASE) + [height_high, height_low, self._sensitivity]
         )
         full_command = build_command(command_bytes)
-        
+
         await self._send_command(full_command)
 
     async def async_stop_auto_move(self) -> None:
