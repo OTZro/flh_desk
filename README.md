@@ -1,7 +1,7 @@
 # FLH Desk Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/release/your-username/ha-flh-desk.svg)](https://github.com/your-username/ha-flh-desk/releases)
+[![GitHub release](https://img.shields.io/github/release/OTZro/flh_desk.svg)](https://github.com/OTZro/flh_desk/releases)
 
 Control your FLH height-adjustable desk directly from Home Assistant via Bluetooth LE.
 
@@ -28,7 +28,7 @@ Control your FLH height-adjustable desk directly from Home Assistant via Bluetoo
 2. Click on "Integrations"
 3. Click the three dots in the top right corner
 4. Select "Custom repositories"
-5. Add `https://github.com/your-username/ha-flh-desk` as repository
+5. Add `https://github.com/OTZro/flh_desk` as repository
 6. Select "Integration" as category
 7. Click "Add"
 8. Search for "FLH Desk" and click "Download"
