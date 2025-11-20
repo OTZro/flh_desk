@@ -121,8 +121,8 @@ class FLHDeskCover(CoordinatorEntity[FLHDeskCoordinator], CoverEntity):
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.is_connected
+        """Return True to allow triggering connection."""
+        return True
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover (move to max height)."""

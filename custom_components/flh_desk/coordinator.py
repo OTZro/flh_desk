@@ -211,17 +211,19 @@ class FLHDeskCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         current_time = time.time()
         idle_time = current_time - self._last_command_time
 
-        # If idle for more than IDLE_TIMEOUT, force reconnect to wake up desk
+        # If idle for more than IDLE_TIMEOUT, reconnect to wake up desk
         if self._last_command_time > 0 and idle_time > IDLE_TIMEOUT:
             _LOGGER.info(
                 "⏰ Idle for %.0f seconds, reconnecting to wake up desk...",
                 idle_time
             )
-            # Disconnect and reconnect
-            await self.async_disconnect()
-            await asyncio.sleep(0.5)
             await self.async_connect()
             _LOGGER.info("✅ Reconnected after idle timeout")
+        elif not self._is_connected:
+            # Not connected, need to connect
+            _LOGGER.info("🔌 Not connected, connecting...")
+            await self.async_connect()
+            _LOGGER.info("✅ Connected")
 
     def _on_disconnect(self, _client: BleakClient) -> None:
         """Handle disconnection."""

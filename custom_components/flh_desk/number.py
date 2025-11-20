@@ -85,8 +85,8 @@ class FLHDeskHeightNumber(CoordinatorEntity[FLHDeskCoordinator], NumberEntity):
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.is_connected
+        """Return True to allow triggering connection."""
+        return True
 
     async def async_set_native_value(self, value: float) -> None:
         """Set target height."""
